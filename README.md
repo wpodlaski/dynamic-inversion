@@ -2,6 +2,7 @@
 Code for Podlaski &amp; Machens 2020
 
 Last updated: 11 June 2020
+***Stay tuned for pytorch and tensorflow implementations
 
 This folder contains five python files (.py), and one empty subfolder (data).
 
