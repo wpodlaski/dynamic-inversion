@@ -8,11 +8,11 @@ from sim_tools import backprop_error, get_maxreal_eig, SSA_opt, get_mat_angle, g
 ##########################
 # 1 hyper-parameters
 ##########################
-model_name = ['BP', 'FA', 'PBP', 'NDI', 'NDI-2', 'NDI-3', 'DI', 'DI-2', 'DI-3']
-model_type = ['BP', 'FA', 'PBP', 'NDI', 'NDI', 'NDI', 'DI', 'DI', 'DI']
-fback_type = ['n/a', 'random', 'n/a', 'neg-transpose', 'neg-transpose', 'optim',
+model_name = ['BP', 'FA', 'FA-2', 'PBP', 'NDI', 'NDI-2', 'NDI-3', 'DI', 'DI-2', 'DI-3']
+model_type = ['BP', 'FA', 'FA', 'PBP', 'NDI', 'NDI', 'NDI', 'DI', 'DI', 'DI']
+fback_type = ['n/a', 'random', 'neg-transpose-fa', 'n/a', 'neg-transpose', 'neg-transpose', 'optim',
                                     'neg-transpose', 'neg-transpose', 'optim']
-leak_vals = [0., 0., 0., 0., 0.001, 0.01, 0., 0.001, 0.01]  # alpha
+leak_vals = [0., 0., 0., 0., 0.01, 0.001, 0.01, 0.01, 0.001, 0.01]  # alpha
 eta = 1e-2  # learning rate
 norm_delW = False  # FOR FIG. 3b, SET THIS TO TRUE
 if norm_delW:
@@ -57,6 +57,7 @@ for i in range(len(model_name)):
         'random': B1_tmp_lrg.copy(),
         'optim': B1_opt.copy(),
         'neg-transpose': -W1_tmp.T.copy(),
+        'neg-transpose-fa':-50.*W1_tmp.T.copy(),
         'n/a': np.array([])}[fback_type[i]]
 
 alpha = {m: leak_vals[idx] for idx,m in enumerate(model_name)}
@@ -73,7 +74,7 @@ angles = {m: np.zeros((num_iters, 3)) for m in model_name}  # compare B with -W^
 input_order = np.random.permutation(num_iters)
 for i in range(num_iters):
     if np.mod(i, 100) == 0:
-        print(i)
+        print('Iter: %d / %d'%(i,num_iters))
 
     # choose random input
     x_i = x[:, input_order[i]]
@@ -134,14 +135,13 @@ for i in range(num_iters):
 # normalize the error
 n_error = {m:[] for m in model_name}
 e_max = np.max([np.max(e) for e in error.values()])
-print(e_max)
 for m in model_name:
     n_error[m] = error[m] / e_max
 
 cmap = ['#000000', '#bdbdbd', '#b15928', '#1f78b4', '#33a02c',
         '#6a3d9a', '#e31a1c', '#ff7f00', '#ffd92f', '#CCA700']
-colors = [0, 1, 4, 3, 6, 9, 3, 6, 9]
-a_vals = [1,1,1,1,1,1,0.4,0.4,0.4]
+colors = [0, 1, 1, 4, 3, 6, 9, 3, 6, 9]
+a_vals = [1,1,0.4,1,0.4,0.4,0.4,1,1,1]
 
 f = plt.figure(figsize=(12, 2.5), dpi=150, constrained_layout=True)
 widths = [1.0, 0.75, 0.75]
@@ -187,8 +187,8 @@ for i in range(len(model_name)):
 plt.ylabel('$\delta_{DI}\sphericalangle\delta_{NDI}$')
 plt.xticks([0, 200, 400], [])
 plt.xlim([-10, 500])
-plt.yticks([0, 45, 90], [0, 45, 90])
-plt.ylim([-5, 90])
+plt.yticks([0, 45], [0, 45])
+plt.ylim([-3, 55])
 ax5 = f.add_subplot(gs[1, 2])
 ax5.spines['right'].set_visible(False)
 ax5.spines['top'].set_visible(False)
@@ -201,5 +201,12 @@ plt.xticks([0, 200, 400], [0, 200, 400])
 plt.yticks([0, 45, 90], [0, 45, 90])
 plt.ylim([-5, 90])
 plt.xlabel('No. examples')
+
+plt.tight_layout()
+
+if norm_delW:
+    f.savefig('linear_regression_norm2.pdf')
+else:
+    f.savefig('linear_regression2.pdf')
 
 plt.show()

@@ -2,20 +2,20 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-from sim_tools import (backprop_error, get_maxreal_eig, SSA_opt, get_mat_angle,
-                       get_vec_angle, jitted_run_2L_tanh_di_net)
+from sim_tools import (backprop_error, get_maxreal_eig, SSA_opt, get_mat_angle, get_vec_angle,
+                    jitted_run_2L_tanh_di_net, jitted_run_2L_linear_di_net, jitted_run_2L_linearized_di_net)
 
 
 ##########################
 # 1 hyper-parameters
 ##########################
-model_name = ['BP', 'FA', 'PBP', 'NDI', 'NDI-2', 'NDI-3',
+model_name = ['BP', 'FA', 'FA-2', 'PBP', 'NDI', 'NDI-2', 'NDI-3',
               'DI', 'DI-2', 'DI-3', 'SDI', 'SDI-2', 'SDI-3']
-model_type = ['BP', 'FA', 'PBP', 'NDI', 'NDI', 'NDI',
+model_type = ['BP', 'FA', 'FA', 'PBP', 'NDI', 'NDI', 'NDI',
                 'DI', 'DI', 'DI', 'SDI', 'SDI', 'SDI']
-fback_type = ['n/a', 'random', 'n/a', 'neg-transpose', 'neg-transpose', 'optim', 'neg-transpose',
+fback_type = ['n/a', 'random', 'neg-transpose', 'n/a', 'neg-transpose', 'neg-transpose', 'optim', 'neg-transpose',
               'neg-transpose', 'optim', 'neg-transpose', 'neg-transpose', 'optim']
-leak_vals = [0., 0., 0., 0., 0.01, 0.1, 0., 0.01, 0.1, 0., 0.01, 0.1]
+leak_vals = [0., 0., 0., 0., 0.01, 0.001, 0.01, 0.01, 0.001, 0.01, 0.01, 0.001, 0.01]
 eta = 1e-2
 num_iters = 10000  # set this to 20000 for exact replication of Fig. 3
 
@@ -65,8 +65,8 @@ if 'optim' in fback_type:
         B2_opt = SSA_opt(W2_tmp, B2_tmp, 0.0,lr=5e-1,maxiters=2000,miniters=100)
     while B1_opt is None:
         B1_opt = SSA_opt(W1_tmp, B1_tmp, 0.0,lr=5e-1,maxiters=2000,miniters=100)
-    while B_opt is None:
-        B_opt = SSA_opt(np.dot(W2_tmp, W1_tmp), B_tmp, 0.0,lr=5e-1,maxiters=2000,miniters=100)
+    #while B_opt is None:
+    #    B_opt = SSA_opt(np.dot(W2_tmp, W1_tmp), B_tmp, 0.0,lr=5e-1,maxiters=2000,miniters=100)
 W0, W1, W2 = {}, {}, {}
 b0, b1, b2 = {}, {}, {}
 B1, B2, B = {}, {}, {}
@@ -79,7 +79,7 @@ for i in range(len(model_name)):
     b2[model_name[i]] = b2_tmp.copy()
     B1[model_name[i]], B2[model_name[i]], B[model_name[i]] = {
         'random': (B1_tmp_lrg.copy(), B2_tmp_lrg.copy(), B_tmp_lrg.copy()),
-        'optim': (B1_opt.copy(), B2_opt.copy(), B_opt.copy()),
+        'optim': (B1_opt.copy(), B2_opt.copy(), -np.dot(B1_opt,B2_opt)),
         'neg-transpose': (-W1_tmp.T.copy(), -W2_tmp.T.copy(), -np.dot(W1_tmp.T, W2_tmp.T)),
         'n/a': (np.array([]), np.array([]), np.array([]))}[fback_type[i]]
 
@@ -97,7 +97,7 @@ angles = {m: np.zeros((num_iters, 4)) for m in model_name}  # compare B with -W^
 input_order = np.random.permutation(num_iters)
 for i in range(num_iters):
     if np.mod(i, 100) == 0:
-        print(i)
+        print('Iter: %d / %d'%(i,num_iters))
 
     # choose random input
     x_i = x[:, input_order[i]]
@@ -119,12 +119,14 @@ for i in range(num_iters):
         del3 = e
         if model_type[m_idx] == 'SDI':
             (del1, del2) = jitted_run_2L_tanh_di_net(n_hidden1, n_hidden2, n_output,
-                                                     W1[m], W2[m], B[m], del3, alpha[m])
+                                                      W1[m], W2[m], B[m], del3, alpha[m])#, dh1, dh2)
         else:
-            del2 = backprop_error(model_type[m_idx], W2[m], B2[m], alpha[m], dh2, del3, 'tanh')
-            del1 = backprop_error(model_type[m_idx], W1[m], B1[m], alpha[m], dh1, del2, 'tanh')
+            del2 = backprop_error(model_type[m_idx], W2[m], B2[m], alpha[m], dh2, del3, 'linear')
+            del2 = np.multiply(del2,dh2)
+            del1 = backprop_error(model_type[m_idx], W1[m], B1[m], alpha[m], dh1, del2, 'linear')
+            del1 = np.multiply(del1,dh1)
 
-            # C) weight updates
+        # C) weight updates
         if i>0:  # skip first weight update so that each model begins with the same error
             if np.linalg.norm(del1) > 1.:
                 del1 /= (np.linalg.norm(del1)/1.)
@@ -189,15 +191,14 @@ for i in range(num_iters):
 # normalize the error
 n_error = {m: [] for m in model_name}
 e_max = np.max([np.max(e) for e in error.values()])
-print(e_max)
 for m in model_name:
     n_error[m] = error[m] / e_max
 
 cmap = ['#000000', '#bdbdbd', '#b15928', '#1f78b4', '#33a02c',
         '#6a3d9a', '#e31a1c', '#ff7f00', '#ffd92f', '#CCA700']
-colors = [0, 1, 4, 3, 6, 9, 3, 6, 9, 3, 6, 9]
-a_vals = [1, 1, 1, 1, 1, 1, 0.4, 0.4, 0.4, 1, 1, 1]
-s_vals = ['-', '-', '-', '-', '-', '-', '-', '-', '-', ':', ':', ':']
+colors = [0, 1, 1, 4, 3, 6, 9, 3, 6, 9, 3, 6, 9]
+a_vals = [1, 1, 0.4, 1, 0.4, 0.4, 0.4, 1, 1, 1, 1, 1, 1]
+s_vals = ['-', '-', '-', '-', '-', '-', '-', '-', '-', '-', ':', ':', ':']
 
 f = plt.figure(figsize=(12, 3), dpi=150, constrained_layout=True)
 widths = [1.0, 0.75, 0.75]
@@ -218,12 +219,14 @@ ax2.spines['right'].set_visible(False)
 ax2.spines['top'].set_visible(False)
 for i in range(len(model_name)):
     if model_type[i] == 'DI':
-        plt.plot(range(0, num_iters), np.abs(stability[model_name[i]]), c=cmap[colors[i]])
+        plt.plot(range(0, num_iters), np.abs(stability[model_name[i]][:,0]), c=cmap[colors[i]])
+        plt.plot(range(0, num_iters), np.abs(stability[model_name[i]][:,1]), '--', c=cmap[colors[i]])
 plt.yscale('log')
 plt.gca().invert_yaxis()
 plt.xlim([-10, 500])
 plt.xticks([0, 200, 400], [])
-plt.yticks([10**-6,10**-4,10**-2,10**0],['$-10^{-6}$','$-10^{-4}$','$-10^{-2}$','$-10^{0}$'])
+plt.yticks([10**-3,10**-2],['$-10^{-3}$','$-10^{-2}$'])
+#plt.ylim([0.0008,0.012])
 plt.ylabel('$\lambda_{max}$')
 ax3 = f.add_subplot(gs[1, 1])
 ax3.spines['right'].set_visible(False)
@@ -243,24 +246,28 @@ ax4.spines['top'].set_visible(False)
 for i in range(len(model_name)):
     if model_type[i] == 'DI':
         plt.plot(range(0, num_iters),angles[model_name[i]][:, 2], c=cmap[colors[i]])
-        plt.plot(range(0, num_iters),angles[model_name[i]][:, 3], c=cmap[colors[i]])
+        plt.plot(range(0, num_iters),angles[model_name[i]][:, 3], '--',c=cmap[colors[i]])
 plt.ylabel('$\delta_{DI}\sphericalangle\delta_{NDI}$')
 plt.xticks([0, 200, 400], [])
 plt.xlim([-10, 500])
-plt.yticks([0, 45, 90], [0, 45, 90])
-plt.ylim([-5, 120])
+plt.yticks([0, 15], [0, 15])
+#plt.ylim([-5, 50])
 ax5 = f.add_subplot(gs[1, 2])
 ax5.spines['right'].set_visible(False)
 ax5.spines['top'].set_visible(False)
 for i in range(len(model_name)):
     if model_type[i] == 'SDI':
         plt.plot(range(0, num_iters),angles[model_name[i]][:, 2], c=cmap[colors[i]])
-        plt.plot(range(0, num_iters),angles[model_name[i]][:, 3], c=cmap[colors[i]])
+        plt.plot(range(0, num_iters),angles[model_name[i]][:, 3], '--',c=cmap[colors[i]])
 plt.ylabel('$\delta_{SDI}\sphericalangle\delta_{NDI}$')
 plt.xlim([-10, 500])
 plt.xticks([0, 200, 400], [0, 200, 400])
-plt.yticks([0, 45, 90], [0, 45, 90])
-plt.ylim([-5, 120])
+plt.yticks([0, 45], [0, 45])
+plt.ylim([-2, 55])
 plt.xlabel('No. examples')
+
+plt.tight_layout()
+
+f.savefig('nonlinear_regression.pdf')
 
 plt.show()

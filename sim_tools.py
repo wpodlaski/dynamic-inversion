@@ -5,8 +5,8 @@ from scipy.linalg import solve_continuous_lyapunov
 from numba import njit
 
 rcond = -1
-tsteps = 10000
-dt = 0.1
+tsteps = 1000
+dt = 0.5
 
 # ERROR BACKPROPAGATION FUNCTIONS
 
@@ -37,10 +37,35 @@ def run_2L_tanh_di_net(dx, dy, dz, W, W2, B, z_hat, alpha, dt=dt, tsteps=tsteps)
         rz = rz + dt*(-alpha*rz + np.dot(W2,np.tanh(ry)) - z_hat)
     return (rx,ry)
 
+# for single-loop dynamic inversion (SDI)
+def run_2L_linear_di_net(dx, dy, dz, W, W2, B, z_hat, alpha, dt=dt, tsteps=tsteps):
+    rx = np.zeros((dx,))
+    ry = np.zeros((dy,))
+    rz = np.zeros((dz,))
+    for t in range(1,tsteps):
+        rx = rx + dt*(-rx + np.dot(B,rz))
+        ry = ry + dt*(-ry + np.dot(W,rx))
+        rz = rz + dt*(-alpha*rz + np.dot(W2,ry) - z_hat)
+    return (rx,ry)
+
+# for single-loop dynamic inversion (SDI)
+def run_2L_linearized_di_net(dx, dy, dz, W, W2, B, z_hat, alpha, dhx, dhy, dt=dt, tsteps=tsteps):
+    rx = np.zeros((dx,))
+    ry = np.zeros((dy,))
+    rz = np.zeros((dz,))
+    for t in range(1,tsteps):
+        rx = rx + dt*(-rx + np.dot(B,rz))
+        ry = ry + dt*(-ry + np.dot(W,np.divide(rx,dhx)))
+        rz = rz + dt*(-alpha*rz + np.dot(W2,np.divide(ry,dhy)) - z_hat)
+    #rx = np.multiply(rx,dhx)
+    return (rx,ry)
+
 # use numba to speed up dynamic inversion algorithms
 jitted_run_linear_di_net = njit()(run_linear_di_net)
 jitted_run_tanh_di_net = njit()(run_tanh_di_net)
 jitted_run_2L_tanh_di_net = njit()(run_2L_tanh_di_net)
+jitted_run_2L_linear_di_net = njit()(run_2L_linear_di_net)
+jitted_run_2L_linearized_di_net = njit()(run_2L_linearized_di_net)
 
 def backprop_error(m,W,B,alpha,dh,delta0,tfunc_str='linear'):
 	if m=='BP':
@@ -80,7 +105,7 @@ def SSA_opt(W,B,alpha,lr=5e-2,maxiters=200,miniters=10):
     d1,d2 = W.shape
     M = np.block([[-np.eye(d2),B],[W,-alpha*np.eye(d1)]])
     s = np.max(np.real(np.linalg.eigvals(M)))
-    print('Optimizing feedback weights. lambda init = ',s)
+    print('Optimizing feedback weights.\nlambda init = ',s)
     
     itr = 0
     while (miniters>itr or (s>-0.01 and itr<maxiters)):

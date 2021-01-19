@@ -1,7 +1,7 @@
 # dynamic-inversion
 Code for Podlaski &amp; Machens 2020
 
-Last updated: 11 June 2020
+Last updated: 19 Jan 2021
 
 ***Stay tuned for pytorch and tensorflow implementations
 
